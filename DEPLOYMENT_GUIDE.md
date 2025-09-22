@@ -5,9 +5,9 @@
 Your Rush PH Messenger Bot is **100% ready** for Render deployment! All requirements are met and tested.
 
 ## 📋 **Pre-Deployment Checklist**
-- ✅ **app.py** - Flask application entry point
-- ✅ **Procfile** - Gunicorn server configuration  
-- ✅ **requirements.txt** - All Python dependencies
+- ✅ **app.js** - Node.js application entry point
+- ✅ **Procfile** - Node.js server configuration  
+- ✅ **package.json** - All Node.js dependencies
 - ✅ **.env.example** - Environment variables template
 - ✅ **Health check endpoint** - `/health` for monitoring
 - ✅ **Webhook endpoints** - `/webhook` for Facebook
@@ -35,9 +35,9 @@ Your Rush PH Messenger Bot is **100% ready** for Render deployment! All requirem
 2. **Configure Service**
    ```
    Name: rush-ph-messenger-bot
-   Environment: Python 3
-   Build Command: pip install -r requirements.txt
-   Start Command: gunicorn app:app
+   Environment: Node
+   Build Command: npm install
+   Start Command: npm start
    ```
 
 3. **Set Environment Variables**
@@ -46,8 +46,7 @@ Your Rush PH Messenger Bot is **100% ready** for Render deployment! All requirem
    FACEBOOK_VERIFY_TOKEN=your_chosen_verify_token  
    FACEBOOK_APP_SECRET=your_actual_app_secret
    PORT=10000
-   FLASK_ENV=production
-   FLASK_DEBUG=False
+   NODE_ENV=production
    ```
 
 4. **Deploy**
@@ -88,8 +87,7 @@ FACEBOOK_APP_SECRET=your_app_secret_from_facebook
 
 # Production Configuration  
 PORT=10000
-FLASK_ENV=production
-FLASK_DEBUG=False
+NODE_ENV=production
 ```
 
 ## 📊 **Expected Performance**

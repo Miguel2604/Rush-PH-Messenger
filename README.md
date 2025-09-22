@@ -27,8 +27,8 @@ In the Philippines, data connectivity can be limited when commuting, but Faceboo
 
 ## Tech Stack
 
-- **Backend**: Python Flask
-- **Web Scraping**: BeautifulSoup4, Requests
+- **Backend**: Node.js with Express
+- **Web Scraping**: Axios and Cheerio
 - **Messaging**: Facebook Messenger API
 - **Deployment**: Render
 - **Data Source**: rush-ph.com
@@ -50,7 +50,8 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for development details.
 
 ### Prerequisites
 
-- Python 3.8+
+- Node.js 18+
+- npm or yarn
 - Facebook Developer Account
 - Facebook Page for the bot
 - Render account for deployment
@@ -62,19 +63,18 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for development details.
 git clone https://github.com/yourusername/Rush-PH-Messenger.git
 cd Rush-PH-Messenger
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
 # Install dependencies
-pip install -r requirements.txt
+npm install
 
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your Facebook app credentials
 
 # Run the application
-python app.py
+npm start
+
+# Or for development with auto-restart
+npm run dev
 ```
 
 ## Environment Variables
