@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test": "node test/test-bot.js"
+    "test": "node test/validation-test.js"
   },
   "keywords": [
     "messenger",

@@ -113,8 +113,11 @@ function cleanUserInput(text) {
     let cleanedText = text.trim();
     cleanedText = cleanedText.replace(/\s+/g, ' '); // Replace multiple spaces with single space
 
-    // Remove special characters but preserve hyphens, dots, and underscores for station/line names
-    cleanedText = cleanedText.replace(/[^a-zA-Z0-9\s\-\._]/g, '');
+    // For regular text input, remove emojis and special characters but preserve hyphens, dots, and underscores for station/line names
+    // Quick reply payloads are already clean so we don't need to process them
+    if (!cleanedText.match(/^(MRT-[0-9]|LRT-[0-9]|TYPE_STATION|BACK_TO_LINES|MORE_[A-Z0-9-]+|help)$/)) {
+        cleanedText = cleanedText.replace(/[^a-zA-Z0-9\s\-\._]/g, '');
+    }
 
     return cleanedText;
 }
@@ -202,6 +205,13 @@ function validateFacebookRequest(data) {
 function extractMessageText(messagingEvent) {
     try {
         const message = messagingEvent.message || {};
+        
+        // Check if this is a quick reply (user clicked a button)
+        if (message.quick_reply && message.quick_reply.payload) {
+            return message.quick_reply.payload;
+        }
+        
+        // Regular text message
         return message.text || null;
     } catch (error) {
         return null;
