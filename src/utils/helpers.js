@@ -40,38 +40,92 @@ function formatTrainScheduleMessage(scheduleData) {
     const trains = scheduleData.nextTrains || [];
     const travelTime = scheduleData.estimatedTravelTime || 'Unknown';
     const isSimulated = scheduleData.simulated || false;
+    const source = scheduleData.source || 'unknown';
 
-    // Build the message
-    let message = `🚆 ${line}: ${origin} → ${destination}\n\n`;
+    // Build the header
+    let message = `🚆 **${line} - ${origin} Station**\n\n`;
 
     if (trains.length > 0) {
-        message += "⏰ Next trains:\n";
-        for (let i = 0; i < Math.min(trains.length, 3); i++) {
-            const train = trains[i];
-            const timeStr = train.time || 'Unknown';
-            const minutes = train.minutesAway || 0;
-            const status = train.status || 'Unknown';
+        // Group trains by direction if available
+        const northbound = trains.filter(t => t.direction === 'Northbound');
+        const southbound = trains.filter(t => t.direction === 'Southbound');
+        const unknown = trains.filter(t => !t.direction || (t.direction !== 'Northbound' && t.direction !== 'Southbound'));
 
-            let timeDesc;
-            if (minutes <= 1) {
-                timeDesc = "Now";
-            } else if (minutes <= 5) {
-                timeDesc = `${minutes} min`;
-            } else {
-                timeDesc = `${minutes} mins`;
+        // Helper function to format train list
+        const formatTrainList = (trainList, maxTrains = 3) => {
+            let trainMsg = '';
+            for (let i = 0; i < Math.min(trainList.length, maxTrains); i++) {
+                const train = trainList[i];
+                const timeStr = train.time || 'Unknown';
+                const minutes = train.minutesAway || 0;
+                const status = train.status || 'Unknown';
+
+                let timeDesc;
+                if (minutes <= 1) {
+                    timeDesc = "Now";
+                } else if (minutes <= 5) {
+                    timeDesc = `${minutes} min`;
+                } else {
+                    timeDesc = `${minutes} mins`;
+                }
+
+                const statusEmoji = status === "On Time" ? "🟢" : (status === "Delayed" ? "🟡" : "⚫");
+                trainMsg += `• ${timeStr} (${timeDesc}) ${statusEmoji}\n`;
             }
+            return trainMsg;
+        };
 
-            const statusEmoji = status === "On Time" ? "🟢" : (status === "Delayed" ? "🟡" : "⚫");
-            message += `• ${timeStr} (${timeDesc}) ${statusEmoji}\n`;
+        // Display trains by direction
+        if (northbound.length > 0) {
+            message += "⬆️ **Northbound Trains:**\n";
+            message += formatTrainList(northbound);
+            message += "\n";
         }
+
+        if (southbound.length > 0) {
+            message += "⬇️ **Southbound Trains:**\n";
+            message += formatTrainList(southbound);
+            message += "\n";
+        }
+
+        if (unknown.length > 0) {
+            message += (northbound.length > 0 || southbound.length > 0) ? "📍 **Other Trains:**\n" : "⏰ **Next Trains:**\n";
+            message += formatTrainList(unknown);
+            message += "\n";
+        }
+
+        // Add summary info
+        const totalTrains = trains.length;
+        const nextTrain = trains[0];
+        if (nextTrain) {
+            const nextMinutes = nextTrain.minutesAway || 0;
+            const nextDirection = nextTrain.direction ? ` (${nextTrain.direction})` : '';
+            
+            if (nextMinutes <= 1) {
+                message += `🚨 **Next train departing NOW!**${nextDirection}\n`;
+            } else {
+                message += `⏰ **Next train in ${nextMinutes} minute${nextMinutes !== 1 ? 's' : ''}**${nextDirection}\n`;
+            }
+        }
+        
+        message += `📊 Showing ${Math.min(totalTrains, 6)} of ${totalTrains} available trains\n`;
+        
     } else {
-        message += "❌ No train schedule available\n";
+        message += "❌ No train schedule available right now\n";
     }
 
-    message += `\n🕐 Estimated travel time: ${travelTime} minutes`;
+    message += `\n🕐 Estimated travel time to ${destination}: ${travelTime} minutes`;
 
-    if (isSimulated) {
-        message += "\n\n📝 *Note: This is simulated data for demonstration purposes*";
+    // Add data source info
+    if (!isSimulated && source === 'playwright-extraction') {
+        message += "\n✅ *Live data from Rush PH*";
+    } else if (isSimulated) {
+        message += "\n📝 *Note: This is simulated data for demonstration*";
+    }
+
+    // Add refresh suggestion for live data
+    if (!isSimulated) {
+        message += "\n\n🔄 Send me another message to get updated times!";
     }
 
     return message;

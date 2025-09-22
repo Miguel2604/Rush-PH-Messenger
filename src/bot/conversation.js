@@ -4,7 +4,7 @@
  */
 
 const StationManager = require('../scraper/stations');
-const RushScraper = require('../scraper/rush-scraper');
+const PlaywrightRushScraper = require('../scraper/playwright-rush-scraper');
 const {
     cleanUserInput,
     isGreeting,
@@ -32,7 +32,7 @@ class ConversationHandler {
      */
     constructor() {
         this.stationManager = new StationManager();
-        this.rushScraper = new RushScraper();
+        this.rushScraper = new PlaywrightRushScraper({ useBrowser: true });
         this.userSessions = new Map(); // In-memory user sessions
         
         // Session timeout (1 hour)
@@ -79,6 +79,10 @@ class ConversationHandler {
                     return await this._handleDestinationLineSelection(userId, cleanedMessage);
                 case ConversationState.WAITING_FOR_DESTINATION_STATION:
                     return await this._handleDestinationStationSelection(userId, cleanedMessage);
+                case ConversationState.COMPLETED:
+                    // User is starting a new conversation after completion
+                    this._setUserState(userId, ConversationState.INITIAL);
+                    return await this._handleInitialState(userId, cleanedMessage);
                 default:
                     // Reset to initial state if in unknown state
                     this._setUserState(userId, ConversationState.INITIAL);

@@ -236,6 +236,12 @@ class RushScraper {
             console.log('⏳ Waiting for React app to initialize...');
             await new Promise(resolve => setTimeout(resolve, 3000));
             
+            // Take a screenshot for debugging (optional)
+            if (process.env.DEBUG_SCREENSHOTS === 'true') {
+                await page.screenshot({ path: 'debug-rush-ph.png', fullPage: true });
+                console.log('📷 Debug screenshot saved as debug-rush-ph.png');
+            }
+            
             // Look for train data containers or schedule elements
             const trainData = await this._extractTrainDataFromPage(page, origin, destination, line);
             
@@ -313,7 +319,17 @@ class RushScraper {
      */
     async _tryStationSelection(page, origin, destination) {
         try {
-            console.log('🔍 Looking for rush-ph.com station selection...');
+            console.log('🔍 Looking for rush-ph.com search functionality...');
+            
+            // Method 1: Try using the search bar (this is the correct way!)
+            const searchSuccess = await this._useSearchBar(page, origin);
+            if (searchSuccess) {
+                console.log('✅ Successfully used search to find station data');
+                return true;
+            }
+            
+            // Method 2: Fallback to old button clicking approach
+            console.log('🔄 Search failed, trying button selection fallback...');
             
             // Step 1: Look for line selection buttons (LRT-1, MRT-3, LRT-2, PNR)
             const lineSelected = await this._selectTrainLine(page, origin);
@@ -331,11 +347,136 @@ class RushScraper {
                 return false;
             }
             
-            console.log('✅ Successfully navigated rush-ph.com interface');
+            console.log('✅ Successfully navigated rush-ph.com interface via buttons');
             return true;
             
         } catch (error) {
             console.error('Error in rush-ph.com station selection:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * Use the search bar to find station schedule data.
+     * @param {object} page - Puppeteer page object
+     * @param {string} stationName - Station name to search for
+     * @returns {Promise<boolean>} True if search was successful
+     */
+    async _useSearchBar(page, stationName) {
+        try {
+            console.log(`🔎 Searching for station: ${stationName}`);
+            
+            // Look for search input field with various possible selectors
+            const searchSelectors = [
+                'input[type="search"]',
+                'input[placeholder*="search"]',
+                'input[placeholder*="Search"]', 
+                'input[placeholder*="station"]',
+                'input[placeholder*="Station"]',
+                '[data-testid="search"]',
+                '[data-testid="search-input"]',
+                '.search-input',
+                '#search',
+                '#search-input',
+                'input[class*="search"]',
+                'input' // Generic fallback
+            ];
+            
+            let searchInput = null;
+            for (const selector of searchSelectors) {
+                try {
+                    const elements = await page.$$(selector);
+                    if (elements.length > 0) {
+                        // Try to find a visible input
+                        for (const element of elements) {
+                            const isVisible = await element.isVisible();
+                            if (isVisible) {
+                                searchInput = element;
+                                console.log(`🎯 Found search input with selector: ${selector}`);
+                                break;
+                            }
+                        }
+                        if (searchInput) break;
+                    }
+                } catch (e) {
+                    // Continue to next selector
+                }
+            }
+            
+            if (!searchInput) {
+                console.log('❌ No search input found');
+                return false;
+            }
+            
+            // Clear and type in the search input
+            await searchInput.click();
+            await searchInput.focus();
+            
+            // Clear any existing text
+            await page.keyboard.down('Control');
+            await page.keyboard.press('KeyA');
+            await page.keyboard.up('Control');
+            
+            // Type the station name
+            await searchInput.type(stationName, { delay: 100 });
+            console.log(`✍️ Typed "${stationName}" in search box`);
+            
+            // Wait for search results to appear
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Look for search results/suggestions
+            const resultSelectors = [
+                '[data-testid*="result"]',
+                '[data-testid*="suggestion"]',
+                '.search-result',
+                '.search-suggestion',
+                '.dropdown-item',
+                '.suggestion',
+                '.result',
+                '[role="option"]',
+                'li[class*="search"]',
+                'div[class*="search"]',
+                'button[class*="search"]'
+            ];
+            
+            let resultClicked = false;
+            for (const selector of resultSelectors) {
+                try {
+                    const results = await page.$$(selector);
+                    console.log(`Found ${results.length} potential results for selector: ${selector}`);
+                    
+                    for (const result of results) {
+                        const text = await result.evaluate(el => el.textContent?.trim());
+                        console.log(`Result text: "${text}"`);
+                        
+                        // Check if this result matches our station
+                        if (text && text.toLowerCase().includes(stationName.toLowerCase())) {
+                            console.log(`🎯 Clicking matching result: "${text}"`);
+                            await result.click();
+                            resultClicked = true;
+                            break;
+                        }
+                    }
+                    if (resultClicked) break;
+                } catch (e) {
+                    console.log(`Error checking results for ${selector}:`, e.message);
+                }
+            }
+            
+            if (!resultClicked) {
+                // Try pressing Enter if no results to click
+                console.log('🔄 No clickable results found, trying Enter key...');
+                await page.keyboard.press('Enter');
+            }
+            
+            // Wait for the dashboard/schedule data to load
+            console.log('⏳ Waiting for schedule data to load...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            return true;
+            
+        } catch (error) {
+            console.error('Error using search bar:', error.message);
             return false;
         }
     }
@@ -441,6 +582,10 @@ class RushScraper {
             
             if (stationSelected) {
                 console.log(`✅ Successfully selected station: ${stationName}`);
+                
+                // Wait for any content to load after station selection
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
                 return true;
             } else {
                 console.log(`❌ Could not find station button: ${stationName}`);
@@ -519,54 +664,197 @@ class RushScraper {
         try {
             console.log('📋 Extracting schedule data from DOM...');
             
-            // Look for common schedule table/list patterns
+            // Wait a bit more for dynamic content to load
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Enhanced extraction to find visible train schedule data on rush-ph.com
             const scheduleData = await page.evaluate((orig, dest, trainLine) => {
-                const tables = document.querySelectorAll('table, .schedule, .timetable, .train-times');
-                const lists = document.querySelectorAll('ul, ol, .train-list, .departure-times');
-                const cards = document.querySelectorAll('.card, .schedule-card, .train-card');
+                console.log('Looking for schedule data on page...');
                 
-                const allElements = [...tables, ...lists, ...cards];
-                const trainTimes = [];
-                
-                for (const element of allElements) {
-                    const text = element.textContent || '';
+                // Rush-ph.com specific selectors (based on common React/Tailwind patterns)
+                const selectors = [
+                    // Time display elements
+                    '[class*="time"]',
+                    '[class*="schedule"]',
+                    '[class*="train"]',
+                    '[class*="departure"]',
+                    '[class*="arrival"]',
+                    '[class*="eta"]',
+                    '[class*="next"]',
                     
-                    // Look for time patterns (HH:MM)
-                    const timeMatches = text.match(/\b\d{1,2}:\d{2}\b/g);
-                    if (timeMatches && timeMatches.length > 0) {
-                        timeMatches.forEach(time => {
-                            if (time && !trainTimes.some(t => t.time === time)) {
-                                trainTimes.push({
-                                    time: time,
-                                    minutesAway: 0, // Will calculate later
-                                    status: 'On Time'
-                                });
+                    // Common React component patterns
+                    '[data-testid*="time"]',
+                    '[data-testid*="schedule"]',
+                    '[data-testid*="train"]',
+                    
+                    // List and table patterns
+                    'table, .schedule, .timetable, .train-times',
+                    'ul, ol, .train-list, .departure-times',
+                    '.card, .schedule-card, .train-card',
+                    
+                    // Tailwind/modern CSS patterns
+                    '.bg-white, .bg-gray-100, .bg-blue-50',
+                    '.p-4, .p-6, .px-4, .py-2',
+                    '.flex, .grid',
+                    '.rounded, .rounded-lg, .shadow',
+                    
+                    // Text content that might contain times
+                    'div, span, p, li, td'
+                ];
+                
+                const trainTimes = [];
+                const processedTimes = new Set();
+                
+                // Search through all potential elements
+                for (const selector of selectors) {
+                    try {
+                        const elements = document.querySelectorAll(selector);
+                        console.log(`Found ${elements.length} elements for selector: ${selector}`);
+                        
+                        for (const element of elements) {
+                            const text = element.textContent || '';
+                            const innerHTML = element.innerHTML || '';
+                            
+                            // Look for time patterns (HH:MM in 24-hour or 12-hour format)
+                            const timePatterns = [
+                                /\\b(\\d{1,2}:\\d{2})\\s*(AM|PM)?\\b/gi,  // 12-hour format
+                                /\\b(\\d{1,2}:\\d{2})\\b/g,               // 24-hour format
+                                /\\b(\\d{1,2}\\.\\d{2})\\b/g,               // European format
+                            ];
+                            
+                            for (const pattern of timePatterns) {
+                                const matches = text.match(pattern);
+                                if (matches) {
+                                    matches.forEach(match => {
+                                        const cleanTime = match.trim();
+                                        // Simple time validation
+                                        const isValidTime = (timeStr) => {
+                                            const cleanTime = timeStr.replace(/[AP]M/gi, '').trim();
+                                            const timeParts = cleanTime.split(/[:.:]/);
+                                            if (timeParts.length !== 2) return false;
+                                            
+                                            const hours = parseInt(timeParts[0]);
+                                            const minutes = parseInt(timeParts[1]);
+                                            
+                                            return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+                                        };
+                                        
+                                        if (!processedTimes.has(cleanTime) && isValidTime(cleanTime)) {
+                                            processedTimes.add(cleanTime);
+                                            
+                                            // Try to extract additional context from surrounding elements
+                                            const parent = element.parentElement;
+                                            const siblings = parent ? Array.from(parent.children) : [];
+                                            
+                                            let status = 'On Time';
+                                            let minutesAway = null;
+                                            let direction = null;
+                                            
+                                            // Look for status indicators
+                                            siblings.forEach(sibling => {
+                                                const siblingText = sibling.textContent?.toLowerCase() || '';
+                                                if (siblingText.includes('delay')) status = 'Delayed';
+                                                if (siblingText.includes('cancel')) status = 'Cancelled';
+                                                if (siblingText.includes('on time')) status = 'On Time';
+                                                
+                                                // Look for minutes away
+                                                const minutesMatch = siblingText.match(/(\\d+)\\s*min/);
+                                                if (minutesMatch) {
+                                                    minutesAway = parseInt(minutesMatch[1]);
+                                                }
+                                                
+                                                // Look for direction info
+                                                if (siblingText.includes('north') || siblingText.includes('up')) {
+                                                    direction = 'Northbound';
+                                                }
+                                                if (siblingText.includes('south') || siblingText.includes('down')) {
+                                                    direction = 'Southbound';
+                                                }
+                                            });
+                                            
+                                            trainTimes.push({
+                                                time: cleanTime,
+                                                minutesAway: minutesAway || 0,
+                                                status: status,
+                                                direction: direction,
+                                                extractedFrom: selector,
+                                                context: text.substring(0, 100)
+                                            });
+                                        }
+                                    });
+                                }
                             }
-                        });
+                        }
+                    } catch (e) {
+                        console.log(`Error with selector ${selector}:`, e.message);
                     }
                 }
                 
-                return trainTimes.length > 0 ? {
-                    line: trainLine,
-                    origin: orig,
-                    destination: dest,
-                    nextTrains: trainTimes.slice(0, 5),
-                    extractedAt: new Date().toISOString(),
-                    simulated: false
-                } : null;
+                // Also check for any visible text that looks like schedule info
+                const bodyText = document.body.textContent || '';
+                console.log('Page text preview:', bodyText.substring(0, 500));
+                
+                // Check for React component state or props that might contain data
+                const reactElements = document.querySelectorAll('[data-reactroot], [data-react-class]');
+                console.log(`Found ${reactElements.length} React elements`);
+                
+                // Look for any elements that contain numbers that could be times
+                const numberElements = Array.from(document.querySelectorAll('*')).filter(el => {
+                    const text = el.textContent || '';
+                    return /\\d{1,2}:\\d{2}/.test(text) && el.children.length === 0; // Leaf nodes only
+                });
+                
+                console.log(`Found ${numberElements.length} elements with time-like patterns`);
+                numberElements.slice(0, 10).forEach(el => {
+                    console.log('Time-like element:', el.textContent, el.className);
+                });
+                
+                console.log(`Total train times extracted: ${trainTimes.length}`);
+                
+                if (trainTimes.length > 0) {
+                    // Sort by time and remove duplicates
+                    const uniqueTimes = trainTimes.filter((time, index, self) => 
+                        index === self.findIndex(t => t.time === time.time)
+                    );
+                    
+                    return {
+                        line: trainLine,
+                        origin: orig,
+                        destination: dest,
+                        nextTrains: uniqueTimes.slice(0, 8), // Get more trains
+                        extractedAt: new Date().toISOString(),
+                        simulated: false,
+                        source: 'dom-extraction',
+                        extractionDetails: {
+                            selectorsUsed: selectors.length,
+                            elementsFound: trainTimes.length,
+                            uniqueTimes: uniqueTimes.length
+                        }
+                    };
+                }
+                
+                return null;
             }, origin, destination, line);
             
-            if (scheduleData && scheduleData.nextTrains.length > 0) {
-                // Calculate minutes away
-                scheduleData.nextTrains = this._calculateMinutesAway(scheduleData.nextTrains);
+            if (scheduleData && scheduleData.nextTrains && scheduleData.nextTrains.length > 0) {
+                // Calculate minutes away for times that don't have it
+                scheduleData.nextTrains = scheduleData.nextTrains.map(train => {
+                    if (train.minutesAway === 0 || train.minutesAway === null) {
+                        train.minutesAway = this._calculateMinutesFromTime(train.time);
+                    }
+                    return train;
+                });
+                
                 scheduleData.estimatedTravelTime = this._estimateTravelTime(origin, destination);
                 scheduleData.lastUpdated = new Date().toISOString();
                 scheduleData.status = 'operational';
                 
                 console.log(`✅ Extracted ${scheduleData.nextTrains.length} train times from DOM`);
+                console.log('Sample extracted data:', scheduleData.nextTrains.slice(0, 2));
                 return scheduleData;
             }
             
+            console.log('❌ No schedule data found in DOM');
             return null;
         } catch (error) {
             console.error('Error extracting schedule from DOM:', error.message);

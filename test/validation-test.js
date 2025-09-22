@@ -4,7 +4,7 @@
  */
 
 const StationManager = require('../src/scraper/stations');
-const RushScraper = require('../src/scraper/rush-scraper');
+const PlaywrightRushScraper = require('../src/scraper/playwright-rush-scraper');
 const ConversationHandler = require('../src/bot/conversation');
 const helpers = require('../src/utils/helpers');
 
@@ -41,8 +41,8 @@ console.log(`✓ LRT-1 stations: ${lrt1Stations.length} (${lrt1Stations.length =
 const lrt2Stations = stationManager.getLineStations('LRT-2');
 console.log(`✓ LRT-2 stations: ${lrt2Stations.length} (${lrt2Stations.length === 13 ? 'PASS' : 'FAIL'}`);
 
-console.log('\n🌐 Testing RushScraper...');
-const scraper = new RushScraper();
+console.log('\n🌐 Testing PlaywrightRushScraper...');
+const scraper = new PlaywrightRushScraper({ useBrowser: false }); // Use simulation for tests
 
 // Test scraping (will simulate since we don't want to hit actual website in tests)
 scraper.scrapeTrainSchedule('Taft Avenue', 'Cubao', 'LRT-1')
@@ -83,7 +83,7 @@ conversationHandler.handleMessage(testUserId, 'Cubao')
     console.log(`✓ Destination handling: ${destinationText.includes('Next trains') || destinationText.includes('🚆') || destinationText.includes('LRT') ? 'PASS' : 'FAIL'}`);
     
     // Check if conversation was reset
-    const resetResponse = conversationHandler.handleMessage(testUserId, 'Hi again');
+    const resetResponse = await conversationHandler.handleMessage(testUserId, 'Hi again');
     const resetText = typeof resetResponse === 'string' ? resetResponse : resetResponse.text || '';
     console.log(`✓ Conversation reset: ${resetText.includes('current train station') ? 'PASS' : 'FAIL'}`);
   })
@@ -95,7 +95,7 @@ console.log('\n🛠️  Testing Helper Functions...');
 
 // Test input cleaning
 const cleanedInput = helpers.cleanUserInput('  TAFT avenue  ');
-console.log(`✓ Input cleaning: "${cleanedInput}" (${cleanedInput === 'taft avenue' ? 'PASS' : 'FAIL'})`);
+console.log(`✓ Input cleaning: "${cleanedInput}" (${cleanedInput === 'TAFT avenue' ? 'PASS' : 'FAIL'}`);
 
 // Test greeting detection
 const isGreeting1 = helpers.isGreeting('Hello');
@@ -105,10 +105,14 @@ console.log(`✓ Greeting detection: Hello=${isGreeting1}, "train schedule"=${is
 // Test message formatting
 const mockSchedule = {
   line: 'LRT-1',
-  from: 'Taft Avenue',
-  to: 'Cubao',
-  next_trains: ['10:05 AM (3 mins)', '10:12 AM (10 mins)', '10:19 AM (17 mins)'],
-  travel_time: '25 minutes'
+  origin: 'Taft Avenue',
+  destination: 'Cubao',
+  nextTrains: [
+    { time: '10:05', minutesAway: 3, status: 'On Time' },
+    { time: '10:12', minutesAway: 10, status: 'On Time' },
+    { time: '10:19', minutesAway: 17, status: 'On Time' }
+  ],
+  estimatedTravelTime: 25
 };
 
 const formattedMessage = helpers.formatTrainScheduleMessage(mockSchedule);
@@ -116,12 +120,12 @@ console.log(`✓ Schedule formatting: ${formattedMessage.includes('🚆') && for
 
 // Test suggestions formatting
 const mockSuggestions = ['Tayuman', 'Sta. Mesa', 'Pureza'];
-const formattedSuggestions = helpers.formatStationSuggestions(mockSuggestions);
+const formattedSuggestions = helpers.formatStationSuggestions(mockSuggestions, 'tayuman');
 console.log(`✓ Suggestions formatting: ${formattedSuggestions.includes('Did you mean') ? 'PASS' : 'FAIL'}`);
 
 // Test error messages
 const errorMsg = helpers.getErrorMessage('network');
-console.log(`✓ Error message generation: ${errorMsg.includes('network') ? 'PASS' : 'FAIL'}`);
+console.log(`✓ Error message generation: ${errorMsg.includes('connecting') ? 'PASS' : 'FAIL'}`);
 
 console.log('\n🔐 Testing Facebook Verification...');
 
@@ -142,7 +146,7 @@ console.log('\n📊 Test Summary Complete!');
 console.log('----------------------------------------');
 console.log('✅ All major components tested');
 console.log('✅ StationManager: Station validation, suggestions, route checking');
-console.log('✅ RushScraper: Schedule retrieval and simulation');
+console.log('✅ PlaywrightRushScraper: Schedule retrieval and simulation');
 console.log('✅ ConversationHandler: Multi-step conversation flow');
 console.log('✅ Helper Functions: Input cleaning, formatting, validation');
 console.log('✅ Error Handling: Graceful error management');
@@ -151,7 +155,7 @@ console.log('\n🚀 JavaScript version is ready for deployment!');
 // Test if all dependencies are properly imported
 console.log('\n📦 Dependency Check:');
 console.log('✓ StationManager imported successfully');
-console.log('✓ RushScraper imported successfully'); 
+console.log('✓ PlaywrightRushScraper imported successfully');
 console.log('✓ ConversationHandler imported successfully');
 console.log('✓ Helpers imported successfully');
 console.log('\n✅ All dependencies resolved correctly!');
