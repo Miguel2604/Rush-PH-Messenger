@@ -305,7 +305,7 @@ class RushScraper {
     }
 
     /**
-     * Try to interact with station selectors on the page.
+     * Try to interact with station selectors on rush-ph.com.
      * @param {object} page - Puppeteer page object
      * @param {string} origin - Origin station
      * @param {string} destination - Destination station
@@ -313,33 +313,142 @@ class RushScraper {
      */
     async _tryStationSelection(page, origin, destination) {
         try {
-            console.log('🔍 Looking for station selection elements...');
+            console.log('🔍 Looking for rush-ph.com station selection...');
             
-            // Common selectors for station inputs/dropdowns
-            const selectors = [
-                'select[name*="origin"]', 'select[name*="from"]', 'input[name*="origin"]', 'input[name*="from"]',
-                'select[name*="destination"]', 'select[name*="to"]', 'input[name*="destination"]', 'input[name*="to"]',
-                'select[placeholder*="origin"]', 'select[placeholder*="from"]', 
-                'input[placeholder*="origin"]', 'input[placeholder*="from"]',
-                'select[placeholder*="destination"]', 'select[placeholder*="to"]',
-                'input[placeholder*="destination"]', 'input[placeholder*="to"]',
-                '.origin-select', '.from-select', '.destination-select', '.to-select',
-                '#origin', '#from', '#destination', '#to'
-            ];
-            
-            for (const selector of selectors) {
-                const element = await page.$(selector);
-                if (element) {
-                    console.log(`✅ Found selector: ${selector}`);
-                    // Try to interact with the element
-                    await this._interactWithStationElement(page, element, origin, destination);
-                    return true;
-                }
+            // Step 1: Look for line selection buttons (LRT-1, MRT-3, LRT-2, PNR)
+            const lineSelected = await this._selectTrainLine(page, origin);
+            if (!lineSelected) {
+                console.log('❌ No train line buttons found');
+                return false;
             }
             
-            return false;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Step 2: Look for station buttons with rush-ph.com styling
+            const stationSelected = await this._selectStation(page, origin);
+            if (!stationSelected) {
+                console.log('❌ Station selection failed');
+                return false;
+            }
+            
+            console.log('✅ Successfully navigated rush-ph.com interface');
+            return true;
+            
         } catch (error) {
-            console.error('Error in station selection:', error.message);
+            console.error('Error in rush-ph.com station selection:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * Select train line on rush-ph.com.
+     * @param {object} page - Puppeteer page object
+     * @param {string} station - Station name to determine line
+     * @returns {Promise<boolean>} True if line was selected
+     */
+    async _selectTrainLine(page, station) {
+        try {
+            // Determine which line this station belongs to
+            const StationManager = require('./stations');
+            const stationManager = new StationManager();
+            const line = stationManager.findStationLine(station);
+            
+            if (!line) {
+                console.log(`❌ Unknown line for station: ${station}`);
+                return false;
+            }
+            
+            console.log(`🚆 Selecting line: ${line}`);
+            
+            // Look for line button with specific styling
+            const lineButtonSelected = await page.evaluate((targetLine) => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const lineButton = buttons.find(btn => {
+                    const text = btn.textContent?.trim();
+                    return text === targetLine;
+                });
+                
+                if (lineButton) {
+                    lineButton.click();
+                    return true;
+                }
+                return false;
+            }, line);
+            
+            if (lineButtonSelected) {
+                console.log(`✅ Successfully selected ${line}`);
+                return true;
+            } else {
+                console.log(`❌ Could not find ${line} button`);
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('Error selecting train line:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * Select station button on rush-ph.com.
+     * @param {object} page - Puppeteer page object
+     * @param {string} stationName - Station name to select
+     * @returns {Promise<boolean>} True if station was selected
+     */
+    async _selectStation(page, stationName) {
+        try {
+            console.log(`🚉 Looking for station: ${stationName}`);
+            
+            // Look for station buttons with rush-ph.com specific styling
+            const stationSelected = await page.evaluate((targetStation) => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                
+                // Find station button by text content and styling
+                const stationButton = buttons.find(btn => {
+                    const text = btn.textContent?.trim();
+                    const classes = btn.className || '';
+                    
+                    // Check if it matches rush-ph.com station button styling
+                    const hasStationStyling = classes.includes('w-full') && 
+                                            classes.includes('text-left') && 
+                                            classes.includes('px-4') && 
+                                            classes.includes('py-3');
+                    
+                    return text === targetStation && hasStationStyling;
+                });
+                
+                if (stationButton) {
+                    stationButton.click();
+                    return true;
+                }
+                
+                // Fallback: try partial matching
+                const partialMatch = buttons.find(btn => {
+                    const text = btn.textContent?.trim() || '';
+                    const classes = btn.className || '';
+                    const hasStationStyling = classes.includes('w-full') && classes.includes('text-left');
+                    
+                    return text.toLowerCase().includes(targetStation.toLowerCase()) && hasStationStyling;
+                });
+                
+                if (partialMatch) {
+                    partialMatch.click();
+                    return true;
+                }
+                
+                return false;
+            }, stationName);
+            
+            if (stationSelected) {
+                console.log(`✅ Successfully selected station: ${stationName}`);
+                return true;
+            } else {
+                console.log(`❌ Could not find station button: ${stationName}`);
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('Error selecting station:', error.message);
             return false;
         }
     }
@@ -519,7 +628,7 @@ class RushScraper {
     }
     
     /**
-     * Intercept network requests for API data.
+     * Intercept network requests for rush-ph.com API data.
      * @param {object} page - Puppeteer page object
      * @param {string} origin - Origin station
      * @param {string} destination - Destination station
@@ -528,32 +637,57 @@ class RushScraper {
      */
     async _interceptNetworkData(page, origin, destination, line) {
         try {
-            console.log('🌐 Setting up network interception...');
+            console.log('🌐 Setting up rush-ph.com network interception...');
             
-            let networkData = null;
+            const apiCalls = [];
             
-            // Listen for responses
+            // Listen for rush-ph.com specific API responses
             page.on('response', async (response) => {
                 const url = response.url();
-                if (url.includes('api') || url.includes('train') || url.includes('schedule')) {
+                
+                // Target rush-ph.com specific endpoints
+                if (url.includes('.netlify/functions/api-proxy') || 
+                    url.includes('supabase.co') ||
+                    url.includes('rush-ph.com') && (url.includes('api') || url.includes('train') || url.includes('schedule'))) {
+                    
                     try {
-                        const data = await response.json();
-                        if (data && (data.trains || data.schedules || data.departures)) {
-                            networkData = data;
+                        const contentType = response.headers()['content-type'] || '';
+                        if (contentType.includes('json')) {
+                            const data = await response.json();
+                            apiCalls.push({
+                                url: url,
+                                status: response.status(),
+                                data: data,
+                                timestamp: new Date().toISOString()
+                            });
+                            console.log(`📶 Captured API call: ${url}`);
                         }
                     } catch (e) {
-                        // Response might not be JSON
+                        console.log(`📶 Non-JSON response from: ${url}`);
                     }
                 }
             });
             
-            // Trigger a refresh or search to capture API calls
-            await page.reload({ waitUntil: 'networkidle0' });
+            // Try to trigger schedule-related API calls by navigating the interface
+            console.log('🔎 Attempting to trigger schedule API calls...');
+            
+            // Method 1: Try clicking around to trigger API calls
+            await this._triggerScheduleAPICalls(page, origin, line);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Method 2: Try direct API proxy calls if we can determine the format
+            await this._tryDirectAPIProxy(page, origin, destination, line);
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            if (networkData) {
-                console.log('✅ Intercepted network data');
-                return this._processRawData(networkData, origin, destination, line);
+            console.log(`📡 Captured ${apiCalls.length} API calls`);
+            
+            // Process captured API calls
+            for (const call of apiCalls) {
+                const processedData = this._processRawData(call.data, origin, destination, line);
+                if (processedData) {
+                    console.log('✅ Successfully processed API data');
+                    return processedData;
+                }
             }
             
             return null;
@@ -564,25 +698,443 @@ class RushScraper {
     }
     
     /**
-     * Process raw data from various sources.
-     * @param {object} rawData - Raw data object
+     * Try to trigger schedule-related API calls.
+     * @param {object} page - Puppeteer page object
+     * @param {string} station - Station name
+     * @param {string} line - Train line
+     */
+    async _triggerScheduleAPICalls(page, station, line) {
+        try {
+            // Try to interact with elements that might trigger API calls
+            await page.evaluate(() => {
+                // Look for refresh buttons or update buttons
+                const refreshButtons = Array.from(document.querySelectorAll('button')).filter(btn => {
+                    const text = btn.textContent?.toLowerCase() || '';
+                    return text.includes('refresh') || text.includes('update') || text.includes('reload');
+                });
+                
+                refreshButtons.forEach(btn => {
+                    try { btn.click(); } catch (e) {}
+                });
+                
+                // Try to trigger any data loading by scrolling or interacting
+                window.scrollTo(0, 100);
+                window.scrollTo(0, 0);
+            });
+            
+        } catch (error) {
+            console.log('Error triggering API calls:', error.message);
+        }
+    }
+    
+    /**
+     * Try direct API proxy calls to rush-ph.com.
+     * @param {object} page - Puppeteer page object
+     * @param {string} origin - Origin station
+     * @param {string} destination - Destination station
+     * @param {string} line - Train line
+     */
+    async _tryDirectAPIProxy(page, origin, destination, line) {
+        try {
+            console.log('🌐 Attempting direct API proxy calls...');
+            
+            // Try to make direct API calls using the page's fetch
+            await page.evaluate(async (orig, dest, trainLine) => {
+                const apiActions = [
+                    'trains.fetch',
+                    'schedules.fetch', 
+                    'stations.fetch',
+                    'realtime.fetch',
+                    'departures.fetch'
+                ];
+                
+                for (const action of apiActions) {
+                    try {
+                        const response = await fetch('/.netlify/functions/api-proxy?action=' + action, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                origin: orig,
+                                destination: dest,
+                                line: trainLine,
+                                station: orig
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            console.log(`API call successful: ${action}`);
+                        }
+                    } catch (e) {
+                        console.log(`API call failed: ${action}`);
+                    }
+                }
+            }, origin, destination, line);
+            
+        } catch (error) {
+            console.log('Error with direct API calls:', error.message);
+        }
+    }
+    
+    /**
+     * Process raw data from rush-ph.com API responses.
+     * @param {object} rawData - Raw data object from API
+     * @param {string} origin - Origin station
+     * @param {string} destination - Destination station
+     * @param {string} line - Train line
+     * @returns {object|null} Processed schedule data
+     */
+    _processRawData(rawData, origin, destination, line) {
+        try {
+            console.log('🔄 Processing raw data from rush-ph.com API...');
+            
+            if (!rawData || typeof rawData !== 'object') {
+                return null;
+            }
+            
+            // Handle different API response formats from rush-ph.com
+            
+            // Format 1: Direct train/schedule data
+            if (rawData.trains || rawData.schedules || rawData.departures) {
+                return this._processTrainScheduleData(rawData, origin, destination, line);
+            }
+            
+            // Format 2: Supabase response format
+            if (rawData.data && Array.isArray(rawData.data)) {
+                return this._processSupabaseData(rawData, origin, destination, line);
+            }
+            
+            // Format 3: Nested data structure
+            if (rawData.result || rawData.response) {
+                const nestedData = rawData.result || rawData.response;
+                return this._processRawData(nestedData, origin, destination, line);
+            }
+            
+            // Format 4: Weather/status data that might contain train info
+            if (rawData.weather || rawData.status) {
+                return this._processStatusData(rawData, origin, destination, line);
+            }
+            
+            // Format 5: Real-time updates
+            if (rawData.realtime || rawData.live) {
+                return this._processRealTimeData(rawData, origin, destination, line);
+            }
+            
+            // Format 6: Generic data with time patterns
+            return this._extractTimeDataFromGeneric(rawData, origin, destination, line);
+            
+        } catch (error) {
+            console.error('Error processing raw data:', error.message);
+            return null;
+        }
+    }
+    
+    /**
+     * Process train schedule data format.
+     * @param {object} data - Train schedule data
      * @param {string} origin - Origin station
      * @param {string} destination - Destination station
      * @param {string} line - Train line
      * @returns {object|null} Processed data
      */
-    _processRawData(rawData, origin, destination, line) {
+    _processTrainScheduleData(data, origin, destination, line) {
         try {
-            // This would need to be customized based on rush-ph.com's actual data structure
-            console.debug('Processing raw data from rush-ph.com...');
+            const trainData = data.trains || data.schedules || data.departures || [];
+            const trainTimes = [];
             
-            // For now, return null to indicate we need to implement the specific structure
-            // Once we know the actual API response format, we can process it here
+            // Handle array of train data
+            if (Array.isArray(trainData)) {
+                trainData.forEach(train => {
+                    const time = this._extractTimeFromObject(train);
+                    const status = train.status || train.state || 'Unknown';
+                    const delay = train.delay || train.delayMinutes || 0;
+                    
+                    if (time) {
+                        trainTimes.push({
+                            time: time,
+                            minutesAway: this._calculateMinutesFromTime(time),
+                            status: delay > 0 ? 'Delayed' : 'On Time',
+                            delay: delay
+                        });
+                    }
+                });
+            }
+            
+            if (trainTimes.length > 0) {
+                console.log(`✅ Processed ${trainTimes.length} train times from API data`);
+                return {
+                    line: line,
+                    origin: origin,
+                    destination: destination,
+                    nextTrains: trainTimes.slice(0, 5),
+                    estimatedTravelTime: this._estimateTravelTime(origin, destination),
+                    lastUpdated: new Date().toISOString(),
+                    status: 'operational',
+                    simulated: false,
+                    source: 'rush-ph.com-api'
+                };
+            }
+            
             return null;
         } catch (error) {
-            console.error('Error processing raw data:', error.message);
+            console.error('Error processing train schedule data:', error.message);
             return null;
         }
+    }
+    
+    /**
+     * Process Supabase response format.
+     * @param {object} data - Supabase response
+     * @param {string} origin - Origin station
+     * @param {string} destination - Destination station
+     * @param {string} line - Train line
+     * @returns {object|null} Processed data
+     */
+    _processSupabaseData(data, origin, destination, line) {
+        try {
+            const records = data.data || [];
+            const trainTimes = [];
+            
+            records.forEach(record => {
+                // Common Supabase fields for train data
+                const time = record.departure_time || record.arrival_time || record.time || record.scheduled_time;
+                const station = record.station || record.station_name;
+                const trainLine = record.line || record.train_line;
+                const status = record.status || record.state || 'On Time';
+                
+                // Check if this record is relevant to our query
+                if (time && (!station || station.toLowerCase().includes(origin.toLowerCase()))) {
+                    trainTimes.push({
+                        time: this._normalizeTimeFormat(time),
+                        minutesAway: this._calculateMinutesFromTime(time),
+                        status: status,
+                        line: trainLine || line
+                    });
+                }
+            });
+            
+            if (trainTimes.length > 0) {
+                console.log(`✅ Processed ${trainTimes.length} train times from Supabase data`);
+                return {
+                    line: line,
+                    origin: origin,
+                    destination: destination,
+                    nextTrains: trainTimes.slice(0, 5),
+                    estimatedTravelTime: this._estimateTravelTime(origin, destination),
+                    lastUpdated: new Date().toISOString(),
+                    status: 'operational',
+                    simulated: false,
+                    source: 'supabase-api'
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Error processing Supabase data:', error.message);
+            return null;
+        }
+    }
+    
+    /**
+     * Process status/weather data that might contain train information.
+     * @param {object} data - Status data
+     * @param {string} origin - Origin station
+     * @param {string} destination - Destination station
+     * @param {string} line - Train line
+     * @returns {object|null} Processed data
+     */
+    _processStatusData(data, origin, destination, line) {
+        try {
+            // Check if status data contains train disruptions or schedules
+            if (data.trains || data.services || data.lines) {
+                const serviceData = data.trains || data.services || data.lines;
+                return this._processTrainScheduleData({ trains: serviceData }, origin, destination, line);
+            }
+            
+            // Check weather impact on services
+            if (data.weather && data.weather.impact) {
+                console.log('🌧️ Weather impact detected, adjusting simulated data');
+                // Could adjust timing based on weather conditions
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Error processing status data:', error.message);
+            return null;
+        }
+    }
+    
+    /**
+     * Process real-time data.
+     * @param {object} data - Real-time data
+     * @param {string} origin - Origin station
+     * @param {string} destination - Destination station
+     * @param {string} line - Train line
+     * @returns {object|null} Processed data
+     */
+    _processRealTimeData(data, origin, destination, line) {
+        try {
+            const realtimeData = data.realtime || data.live || data;
+            
+            // Handle real-time updates format
+            if (realtimeData.updates || realtimeData.departures || realtimeData.arrivals) {
+                const updates = realtimeData.updates || realtimeData.departures || realtimeData.arrivals;
+                return this._processTrainScheduleData({ trains: updates }, origin, destination, line);
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Error processing real-time data:', error.message);
+            return null;
+        }
+    }
+    
+    /**
+     * Extract time data from generic object structure.
+     * @param {object} data - Generic data object
+     * @param {string} origin - Origin station
+     * @param {string} destination - Destination station
+     * @param {string} line - Train line
+     * @returns {object|null} Processed data
+     */
+    _extractTimeDataFromGeneric(data, origin, destination, line) {
+        try {
+            const dataStr = JSON.stringify(data);
+            
+            // Look for time patterns in the entire data structure
+            const timePatterns = [
+                /\b(\d{1,2}:\d{2})\b/g,  // HH:MM format
+                /\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\b/g,  // ISO timestamp
+                /"time"\s*:\s*"([^"]+)"/g,  // JSON time field
+                /"departure"\s*:\s*"([^"]+)"/g,  // JSON departure field
+                /"arrival"\s*:\s*"([^"]+)"/g   // JSON arrival field
+            ];
+            
+            const foundTimes = [];
+            
+            timePatterns.forEach(pattern => {
+                let match;
+                while ((match = pattern.exec(dataStr)) !== null) {
+                    const timeStr = match[1];
+                    if (this._isValidTimeString(timeStr)) {
+                        foundTimes.push(timeStr);
+                    }
+                }
+            });
+            
+            if (foundTimes.length > 0) {
+                const uniqueTimes = [...new Set(foundTimes)];
+                const trainTimes = uniqueTimes.slice(0, 5).map(time => ({
+                    time: this._normalizeTimeFormat(time),
+                    minutesAway: this._calculateMinutesFromTime(time),
+                    status: 'On Time'
+                }));
+                
+                console.log(`✅ Extracted ${trainTimes.length} time patterns from generic data`);
+                return {
+                    line: line,
+                    origin: origin,
+                    destination: destination,
+                    nextTrains: trainTimes,
+                    estimatedTravelTime: this._estimateTravelTime(origin, destination),
+                    lastUpdated: new Date().toISOString(),
+                    status: 'operational',
+                    simulated: false,
+                    source: 'extracted-patterns'
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Error extracting generic time data:', error.message);
+            return null;
+        }
+    }
+    
+    /**
+     * Extract time from various object formats.
+     * @param {object} obj - Object that might contain time
+     * @returns {string|null} Time string or null
+     */
+    _extractTimeFromObject(obj) {
+        const timeFields = ['time', 'departure_time', 'arrival_time', 'scheduled_time', 'eta', 'departure', 'arrival'];
+        
+        for (const field of timeFields) {
+            if (obj[field]) {
+                return obj[field];
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Calculate minutes away from time string.
+     * @param {string} timeStr - Time string
+     * @returns {number} Minutes away from now
+     */
+    _calculateMinutesFromTime(timeStr) {
+        try {
+            const now = new Date();
+            let targetTime;
+            
+            if (timeStr.includes('T')) {
+                // ISO format
+                targetTime = new Date(timeStr);
+            } else if (timeStr.includes(':')) {
+                // HH:MM format
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                targetTime = new Date();
+                targetTime.setHours(hours, minutes, 0, 0);
+                
+                // If time is in the past, assume it's for tomorrow
+                if (targetTime < now) {
+                    targetTime.setDate(targetTime.getDate() + 1);
+                }
+            } else {
+                return 0;
+            }
+            
+            return Math.max(0, Math.round((targetTime - now) / 60000));
+        } catch (error) {
+            return 0;
+        }
+    }
+    
+    /**
+     * Normalize time format to HH:MM.
+     * @param {string} timeStr - Time string in various formats
+     * @returns {string} Normalized time string
+     */
+    _normalizeTimeFormat(timeStr) {
+        try {
+            if (timeStr.includes('T')) {
+                // ISO format
+                return new Date(timeStr).toLocaleTimeString('en-US', { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    hour12: false 
+                });
+            } else if (timeStr.includes(':')) {
+                // Already in HH:MM format, ensure 2-digit format
+                const [hours, minutes] = timeStr.split(':');
+                return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+            }
+            
+            return timeStr;
+        } catch (error) {
+            return timeStr;
+        }
+    }
+    
+    /**
+     * Check if string is a valid time.
+     * @param {string} str - String to check
+     * @returns {boolean} True if valid time
+     */
+    _isValidTimeString(str) {
+        return /^\d{1,2}:\d{2}$/.test(str) || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str);
     }
     
     /**
