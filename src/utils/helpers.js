@@ -119,8 +119,6 @@ function formatTrainScheduleMessage(scheduleData) {
     // Add data source info
     if (!isSimulated && source === 'playwright-extraction') {
         message += "\n✅ *Live data from Rush PH*";
-    } else if (isSimulated) {
-        message += "\n📝 *Note: This is simulated data for demonstration*";
     }
 
     // Add refresh suggestion for live data

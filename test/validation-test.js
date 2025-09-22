@@ -78,7 +78,7 @@ console.log(`✓ Origin station handling: ${originText.includes('Where are you h
 
 // Test destination and completion
 conversationHandler.handleMessage(testUserId, 'Cubao')
-  .then(destinationResponse => {
+  .then(async destinationResponse => {
     const destinationText = typeof destinationResponse === 'string' ? destinationResponse : destinationResponse.text || '';
     console.log(`✓ Destination handling: ${destinationText.includes('Next trains') || destinationText.includes('🚆') || destinationText.includes('LRT') ? 'PASS' : 'FAIL'}`);
     
